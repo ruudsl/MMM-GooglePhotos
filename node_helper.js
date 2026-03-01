@@ -2,6 +2,7 @@ const NodeHelper = require("node_helper");
 const fs = require("fs");
 const path = require("path");
 const GPhotosPicker = require("./GPhotosPicker.js");
+const GDrive = require("./GDrive.js");
 const { shuffle } = require("./shuffle.js");
 
 const authOption = require("./google_auth.json");
@@ -9,12 +10,15 @@ const authOption = require("./google_auth.json");
 module.exports = NodeHelper.create({
   start: function () {
     this.picker = null;
+    this.drive = null;
     this.config = null;
     this.mediaItems = [];
     this.sessionId = null;
     this.sessionReady = false;
     this.baseUrlRefreshTimer = null;
     this.accessToken = null;
+    this.mode = null; // "drive" or "picker"
+    this.driveFolderId = null;
   },
 
   socketNotificationReceived: function (notification, payload) {
@@ -26,7 +30,9 @@ module.exports = NodeHelper.create({
         }
         break;
       case "NEED_MORE_PICS":
-        if (this.sessionReady && this.mediaItems.length > 0) {
+        if (this.mode === "drive" && this.mediaItems.length > 0) {
+          this.sendPhotos();
+        } else if (this.sessionReady && this.mediaItems.length > 0) {
           this.sendPhotos();
         }
         break;
@@ -41,6 +47,85 @@ module.exports = NodeHelper.create({
   },
 
   initialize: async function () {
+    if (this.config.driveFolder) {
+      this.mode = "drive";
+      await this.initializeDriveMode();
+    } else {
+      this.mode = "picker";
+      await this.initializePickerMode();
+    }
+  },
+
+  // ─── Drive Mode ──────────────────────────────────────────────────────────
+
+  initializeDriveMode: async function () {
+    try {
+      this.drive = new GDrive({
+        authOption: authOption,
+        debug: this.config.debug || false,
+      });
+
+      this.log("Drive mode: resolving folder:", this.config.driveFolder);
+      this.driveFolderId = await this.drive.resolveFolderId(
+        this.config.driveFolder,
+      );
+
+      this.accessToken = await this.drive.getAccessToken();
+      await this.fetchDrivePhotos();
+      this.startDriveRefresh();
+    } catch (err) {
+      this.logError("Drive mode initialization error:", err.toString());
+      this.sendSocketNotification(
+        "ERROR",
+        "Google Drive error: " +
+          err.toString() +
+          "\n\nMake sure google_auth.json has scope: " +
+          "https://www.googleapis.com/auth/drive.readonly " +
+          "and run: node generate_token_v2.js",
+      );
+      // Retry after 5 minutes
+      setTimeout(() => {
+        this.config = null;
+        this.initialize();
+      }, 5 * 60 * 1000);
+    }
+  },
+
+  fetchDrivePhotos: async function () {
+    const files = await this.drive.listImages(this.driveFolderId);
+
+    this.mediaItems = files;
+    this.accessToken = await this.drive.getAccessToken();
+
+    if (this.mediaItems.length === 0) {
+      this.sendSocketNotification(
+        "ERROR",
+        "No images found in Google Drive folder: " + this.config.driveFolder,
+      );
+      return;
+    }
+
+    this.log("Drive folder photos:", this.mediaItems.length);
+    this.sendSocketNotification("INITIALIZED", []);
+    this.sendPhotos();
+  },
+
+  startDriveRefresh: function () {
+    if (this.baseUrlRefreshTimer) clearInterval(this.baseUrlRefreshTimer);
+    // Refresh every 50 minutes (tokens expire after 60)
+    this.baseUrlRefreshTimer = setInterval(async () => {
+      this.log("Refreshing Drive photos and access token...");
+      try {
+        await this.fetchDrivePhotos();
+      } catch (err) {
+        this.logError("Drive refresh error:", err.toString());
+      }
+    }, 50 * 60 * 1000);
+  },
+
+  // ─── Picker Mode ─────────────────────────────────────────────────────────
+
+  initializePickerMode: async function () {
     try {
       this.picker = new GPhotosPicker({
         authOption: authOption,
@@ -62,7 +147,9 @@ module.exports = NodeHelper.create({
             return;
           } else {
             // Session is still valid but user hasn't picked yet — resume polling
-            this.log("Saved session still active, resuming poll for selection.");
+            this.log(
+              "Saved session still active, resuming poll for selection.",
+            );
             this.sessionId = saved.id;
 
             // Show the picker URI again so user can continue selecting
@@ -77,7 +164,10 @@ module.exports = NodeHelper.create({
             return;
           }
         } catch (e) {
-          this.log("Saved session invalid or expired, creating new.", e.message || "");
+          this.log(
+            "Saved session invalid or expired, creating new.",
+            e.message || "",
+          );
           this.picker.clearSession();
         }
       }
@@ -184,25 +274,49 @@ module.exports = NodeHelper.create({
     }
   },
 
+  // ─── Shared ──────────────────────────────────────────────────────────────
+
   sendPhotos: function () {
     if (this.mediaItems.length === 0) return;
 
-    // Transform to format the frontend expects
-    const photos = this.mediaItems.map((item) => {
-      const mediaFile = item.mediaFile || {};
-      return {
-        id: item.id,
-        baseUrl: mediaFile.baseUrl || "",
-        mimeType: mediaFile.mimeType || "image/jpeg",
+    let photos;
+    if (this.mode === "drive") {
+      photos = this.mediaItems.map((file) => ({
+        id: file.id,
+        baseUrl:
+          "https://www.googleapis.com/drive/v3/files/" +
+          file.id +
+          "?alt=media",
+        mimeType: file.mimeType || "image/jpeg",
         mediaMetadata: {
-          creationTime: item.createTime || new Date().toISOString(),
-          width: mediaFile.mediaFileMetadata?.width || "1920",
-          height: mediaFile.mediaFileMetadata?.height || "1080",
+          creationTime: file.createdTime || new Date().toISOString(),
+          width:
+            (file.imageMediaMetadata && file.imageMediaMetadata.width) ||
+            "1920",
+          height:
+            (file.imageMediaMetadata && file.imageMediaMetadata.height) ||
+            "1080",
         },
-        _albumId: "picker",
+        _driveMode: true,
         _accessToken: this.accessToken,
-      };
-    });
+      }));
+    } else {
+      photos = this.mediaItems.map((item) => {
+        const mediaFile = item.mediaFile || {};
+        return {
+          id: item.id,
+          baseUrl: mediaFile.baseUrl || "",
+          mimeType: mediaFile.mimeType || "image/jpeg",
+          mediaMetadata: {
+            creationTime: item.createTime || new Date().toISOString(),
+            width: mediaFile.mediaFileMetadata?.width || "1920",
+            height: mediaFile.mediaFileMetadata?.height || "1080",
+          },
+          _albumId: "picker",
+          _accessToken: this.accessToken,
+        };
+      });
+    }
 
     let sorted;
     if (this.config.sort === "random") {

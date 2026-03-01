@@ -28,9 +28,10 @@ function testKeyFile(keyFilePath) {
 async function generate() {
   const keyFilePath = path.resolve(__dirname, config.keyFilePath);
   testKeyFile(keyFilePath);
+  const scopes = Array.isArray(config.scope) ? config.scope : [config.scope];
   const client = await authenticate({
     keyfilePath: keyFilePath,
-    scopes: [config.scope],
+    scopes: scopes,
   });
 
   if (client.credentials && config.savedTokensPath) {

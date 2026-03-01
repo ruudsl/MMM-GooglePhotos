@@ -5,6 +5,7 @@
 Module.register("MMM-GooglePhotos", {
   defaults: {
     albums: [],
+    driveFolder: null, // Google Drive folder name or ID (enables Drive mode)
     updateInterval: 60000, // 60 seconds
     sort: "random", // random, time
     maxWidth: 1920,
@@ -148,7 +149,9 @@ Module.register("MMM-GooglePhotos", {
       this.index -= this.scanned.length;
     }
     let target = this.scanned[this.index];
-    let url = target.baseUrl + `=w${this.config.showWidth}-h${this.config.showHeight}`;
+    let url = target._driveMode
+      ? target.baseUrl
+      : target.baseUrl + `=w${this.config.showWidth}-h${this.config.showHeight}`;
     this.ready(url, target);
     this.index++;
     if (this.index >= this.scanned.length) {
