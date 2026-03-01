@@ -294,6 +294,8 @@ Module.register("MMM-GooglePhotos", {
   getDom: function () {
     let dom = document.createElement("div");
     dom.id = "GPHOTO";
+    dom.style.width = this.config.showWidth + "px";
+    dom.style.height = this.config.showHeight + "px";
     let back = document.createElement("div");
     back.id = "GPHOTO_BACK";
     let current = document.createElement("div");
