@@ -64,8 +64,8 @@ Module.register("MMM-GooglePhotos", {
       this.uploadableAlbum = payload;
     }
     if (notification === "PICKER_SESSION") {
-      // Show picker URI for user to select photos
-      this.showPickerPrompt(payload.pickerUri);
+      // Show picker URI for user to select photos, with optional album hints
+      this.showPickerPrompt(payload.pickerUri, this.config.albums);
     }
     if (notification === "INITIALIZED") {
       this.albums = payload;
@@ -162,20 +162,46 @@ Module.register("MMM-GooglePhotos", {
     }
   },
 
-  showPickerPrompt: function (pickerUri) {
+  showPickerPrompt: function (pickerUri, albums) {
     const current = document.getElementById("GPHOTO_CURRENT");
     if (!current) return;
     current.textContent = "";
     const prompt = document.createElement("div");
     prompt.style.textAlign = "center";
     prompt.style.padding = "20px";
-    prompt.innerHTML = `
-      <div style="font-size:1.3em; margin-bottom:15px;">Select your photos</div>
-      <div style="font-size:0.9em; margin-bottom:15px;">Open this link on your phone or computer to choose photos:</div>
-      <a href="${pickerUri}" target="_blank" style="color:#4fc3f7; word-break:break-all; font-size:0.8em;">${pickerUri}</a>
-      <div style="margin-top:10px; font-size:0.8em; color:#aaa;">After selecting photos, click <strong>Done</strong> in the Google Photos picker.</div>
-      <div id="GPHOTO_PICKER_STATUS" style="margin-top:15px; font-size:0.75em; color:#888;">Waiting for photo selection...</div>
-    `;
+
+    // Build album search hint if albums are configured
+    let albumHint = "";
+    if (albums && Array.isArray(albums) && albums.length > 0) {
+      const albumNames = albums
+        .map((a) => (typeof a === "string" ? a : a.source || ""))
+        .filter((n) => n.length > 0);
+      if (albumNames.length > 0) {
+        const namesHtml = albumNames
+          .map((n) => "<strong>" + n + "</strong>")
+          .join(", ");
+        albumHint =
+          '<div style="margin-top:12px; font-size:0.85em; color:#aaa; ' +
+          'background:rgba(255,255,255,0.05); padding:10px; border-radius:8px;">' +
+          "Search for album: " +
+          namesHtml +
+          "<br>" +
+          '<span style="font-size:0.85em; color:#777;">Use the search bar in the picker to find your album, then select all photos.</span>' +
+          "</div>";
+      }
+    }
+
+    prompt.innerHTML =
+      '<div style="font-size:1.3em; margin-bottom:15px;">Select your photos</div>' +
+      '<div style="font-size:0.9em; margin-bottom:15px;">Open this link on your phone or computer to choose photos:</div>' +
+      '<a href="' +
+      pickerUri +
+      '" target="_blank" style="color:#4fc3f7; word-break:break-all; font-size:0.8em;">' +
+      pickerUri +
+      "</a>" +
+      albumHint +
+      '<div style="margin-top:10px; font-size:0.8em; color:#aaa;">After selecting photos, click <strong>Done</strong> in the Google Photos picker.</div>' +
+      '<div id="GPHOTO_PICKER_STATUS" style="margin-top:15px; font-size:0.75em; color:#888;">Waiting for photo selection...</div>';
     current.appendChild(prompt);
   },
 
