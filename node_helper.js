@@ -27,6 +27,18 @@ module.exports = NodeHelper.create({
         if (!this.config) {
           this.config = payload;
           this.initialize();
+        } else if (
+          JSON.stringify(this.config) !== JSON.stringify(payload)
+        ) {
+          this.log("Config changed, re-initializing...");
+          if (this.baseUrlRefreshTimer) {
+            clearInterval(this.baseUrlRefreshTimer);
+            this.baseUrlRefreshTimer = null;
+          }
+          this.config = payload;
+          this.mediaItems = [];
+          this.mode = null;
+          this.initialize();
         }
         break;
       case "NEED_MORE_PICS":
@@ -47,6 +59,10 @@ module.exports = NodeHelper.create({
   },
 
   initialize: async function () {
+    this.log(
+      "Initializing. driveFolder:",
+      this.config.driveFolder || "(not set)",
+    );
     if (this.config.driveFolder) {
       this.mode = "drive";
       await this.initializeDriveMode();
@@ -85,7 +101,7 @@ module.exports = NodeHelper.create({
       );
       // Retry after 5 minutes
       setTimeout(() => {
-        this.config = null;
+        this.log("Retrying Drive mode initialization...");
         this.initialize();
       }, 5 * 60 * 1000);
     }
@@ -179,7 +195,7 @@ module.exports = NodeHelper.create({
       this.sendSocketNotification("ERROR", err.toString());
       // Retry after 5 minutes
       setTimeout(() => {
-        this.config = null;
+        this.log("Retrying Picker mode initialization...");
         this.initialize();
       }, 5 * 60 * 1000);
     }
