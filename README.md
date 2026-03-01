@@ -1,198 +1,269 @@
 # MMM-GooglePhotos
 
-A MagicMirror² module to display photos from Google Photos using the **Google Photos Picker API**.
+A [MagicMirror²](https://magicmirror.builders/) module to display photos from Google Photos on your smart mirror.
 
-> **Note:** This module uses the [Google Photos Picker API](https://developers.google.com/photos/picker/guides/get-started-picker), which replaced the deprecated Library API (scopes removed March 31, 2025). On first launch, you will be prompted to select photos via a Google-hosted picker. The module then displays those photos in a slideshow.
+Supports two modes:
+
+- **Picker mode** — Select specific photos via the Google Photos Picker UI
+- **Drive mode** — Automatically display all photos from a Google Drive folder
+
+> **Note:** The original Google Photos Library API was deprecated (scopes removed March 31, 2025). This module uses the [Google Photos Picker API](https://developers.google.com/photos/picker/guides/get-started-picker) and/or the [Google Drive API v3](https://developers.google.com/drive/api/guides/about-sdk) as replacements.
 
 ---
 
 ## Features
 
-- Display user-selected photos from Google Photos
-- Random, newest-first, or oldest-first sorting
-- Automatic base URL refresh (Picker API URLs expire after 60 minutes)
-- OAuth 2.0 authentication
-- Saved sessions resume on restart (no re-picking needed until session expires)
+- Two modes: interactive photo picker or automatic Google Drive folder
+- Random, newest-first, or oldest-first photo sorting
+- Automatic token and URL refresh (no manual intervention needed)
+- Smooth crossfade transitions between photos
+- Configurable photo info overlay with auto-positioning (prevents OLED burn-in)
+- Session persistence — restarts resume without re-picking photos
+- OAuth 2.0 authentication with automatic token refresh
+
+## Screenshots
+
+| Slideshow | Picker prompt |
+|-----------|---------------|
+| ![screenshot](images/screenshot.png) | ![screenshot2](images/screenshot2.png) |
+
+---
 
 ## Installation
 
-1. Navigate to your MagicMirror's modules folder:
+### 1. Clone the module
+
 ```bash
 cd ~/MagicMirror/modules
-```
-
-2. Clone this repository:
-```bash
-git clone https://github.com/hermanho/MMM-GooglePhotos.git
+git clone https://github.com/ruudsl/MMM-GooglePhotos.git
 cd MMM-GooglePhotos
 ```
 
-3. Install dependencies:
+### 2. Install dependencies
+
 ```bash
-npm install
+npm run install-prod
 ```
 
-## Getting Google Photos API Credentials
+### 3. Set up Google Cloud credentials
+
+See [Google Cloud Setup](#google-cloud-setup) below.
+
+### 4. Generate an OAuth token
+
+```bash
+cd ~/MagicMirror/modules/MMM-GooglePhotos
+node generate_token_v2.js
+```
+
+A browser window will open. Sign in with your Google account and grant access. The token is saved to `token.json`.
+
+### 5. Add the module to your MagicMirror config
+
+See [Configuration](#configuration) below.
+
+### 6. Start MagicMirror
+
+```bash
+cd ~/MagicMirror
+npm start
+```
+
+---
+
+## Google Cloud Setup
 
 ### Step 1: Create a Google Cloud Project
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Name it something like "MagicMirror Photos"
+2. Create a new project (e.g., "MagicMirror Photos")
 
-### Step 2: Enable the Google Photos Picker API
+### Step 2: Enable the required API
 
-1. In your project, go to **APIs & Services** > **Library**
-2. Search for **"Google Photos Picker API"**
-   - **Important:** Do NOT enable the similarly named "Google Picker API" — that is a different API for Drive files. You need the one specifically called **"Google Photos Picker API"**.
-3. Click on it and press **Enable**
+Enable the API that matches the mode you want to use:
 
-### Step 3: Create OAuth 2.0 Credentials
+| Mode | API to enable |
+|------|---------------|
+| **Picker mode** (default) | **Google Photos Picker API** |
+| **Drive mode** | **Google Drive API** |
+
+> **Important:** For Picker mode, enable **"Google Photos Picker API"** — not the similarly named "Google Picker API" (which is for Drive files).
+
+To enable: Go to **APIs & Services** > **Library**, search for the API name, and click **Enable**.
+
+### Step 3: Configure the OAuth consent screen
+
+1. Go to **APIs & Services** > **OAuth consent screen**
+2. Choose **External** user type
+3. Fill in the required fields (app name, support email, developer email)
+4. Add your Google email as a **test user**
+5. Save and continue
+
+> **Tip:** To prevent your token from expiring every 7 days, click **Publish App** on the OAuth consent screen page. This moves your app out of "testing" mode.
+
+### Step 4: Create OAuth 2.0 credentials
 
 1. Go to **APIs & Services** > **Credentials**
 2. Click **Create Credentials** > **OAuth client ID**
-3. If prompted, configure the OAuth consent screen:
-   - Choose **External** user type
-   - Fill in the required fields (app name, user support email, developer email)
-   - Add scope: `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`
-   - Add your email as a test user
-   - Save and continue through the summary
-4. Back in Credentials, click **Create Credentials** > **OAuth client ID**
-5. Choose **Desktop app** as the application type
-6. Name it "MMM-GooglePhotos"
-7. Click **Create**
+3. Choose **Desktop app** as the application type
+4. Click **Create**
+5. Download the JSON file and save it as `credentials.json` in the module directory:
 
-### Step 4: Download Credentials
-
-1. Click the download icon (⬇) next to your newly created OAuth 2.0 Client ID
-2. Rename the downloaded file to `credentials.json`
-3. Move it to the `MMM-GooglePhotos` module directory:
 ```bash
 mv ~/Downloads/client_secret_*.json ~/MagicMirror/modules/MMM-GooglePhotos/credentials.json
 ```
 
-## Authentication Setup
+### Step 5: Set the correct API scope
 
-Generate an OAuth token using the `generate_token_v2.js` script:
+Edit `google_auth.json` in the module directory to match your chosen mode:
 
-1. Navigate to the module directory:
-   ```bash
-   cd ~/MagicMirror/modules/MMM-GooglePhotos
-   ```
-2. Ensure your `credentials.json` file is present (see above).
-3. Run the token generation script:
-   ```bash
-   node generate_token_v2.js
-   ```
-4. A browser window will open for Google authentication. Sign in and approve access.
-5. The script saves your token to `token.json`.
+**For Picker mode** (default):
+```json
+{
+  "keyFilePath": "./credentials.json",
+  "savedTokensPath": "./token.json",
+  "scope": "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+}
+```
 
-> **If you previously used the Library API:** Delete your old `token.json` and re-run `node generate_token_v2.js` to generate a new token with the Picker API scope (`photospicker.mediaitems.readonly`). The old Library API scopes no longer work.
+**For Drive mode:**
+```json
+{
+  "keyFilePath": "./credentials.json",
+  "savedTokensPath": "./token.json",
+  "scope": "https://www.googleapis.com/auth/drive.readonly"
+}
+```
 
-## How the Picker API Works
+### Step 6: Generate the token
 
-Unlike the old Library API (which could list all albums/photos automatically), the Picker API requires user interaction:
+```bash
+cd ~/MagicMirror/modules/MMM-GooglePhotos
+node generate_token_v2.js
+```
 
-1. **First launch:** The module creates a Picker session and displays a link on screen.
-2. **Select photos:** Open the link on your phone or computer. Google Photos opens and you select the photos you want to display.
-3. **Slideshow starts:** Once you confirm your selection, the module downloads and displays your photos.
-4. **Session persistence:** The session ID is saved to `picker_session.json`. On restart, the module resumes the saved session without re-picking (until it expires).
-5. **Auto-refresh:** Base URLs expire after 60 minutes. The module automatically refreshes them every 50 minutes.
-6. **Session expiry:** When a session expires, the module creates a new one and prompts you to pick photos again.
+> **Switching modes?** If you switch between Picker and Drive mode, update the scope in `google_auth.json`, delete the old `token.json`, and re-run `node generate_token_v2.js`.
+
+---
 
 ## Configuration
 
-Add the module to your `config/config.js` file:
+Add the module to your `config/config.js`:
+
+### Picker mode (default)
 
 ```javascript
 {
   module: "MMM-GooglePhotos",
   position: "middle_center",
   config: {
-    updateInterval: 60000, // 60 seconds (in milliseconds)
-    sort: "random",        // "random", "new", or "old"
+    updateInterval: 60000,
+    sort: "random",
     showWidth: 1080,
-    showHeight: 1920,
-    debug: false
+    showHeight: 1920
   }
-},
+}
 ```
 
-### Configuration Options
+On first launch, the module will display a link on screen. Open it on your phone or computer to select which photos to display.
+
+### Drive mode
+
+```javascript
+{
+  module: "MMM-GooglePhotos",
+  position: "middle_center",
+  config: {
+    driveFolder: "MagicMirror Photos",
+    updateInterval: 60000,
+    sort: "random",
+    showWidth: 1080,
+    showHeight: 1920
+  }
+}
+```
+
+Place your photos in a Google Drive folder, then set `driveFolder` to the folder name. You can also use the folder ID directly (the long string in the folder's URL).
+
+### All configuration options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `updateInterval` | Time between photo changes (milliseconds). Minimum 10 seconds. | `60000` |
+| `driveFolder` | Google Drive folder name or ID. Set this to enable Drive mode. | `null` (Picker mode) |
+| `updateInterval` | Time between photo changes in milliseconds (minimum 10000) | `60000` |
 | `sort` | Sort order: `"random"`, `"new"` (newest first), or `"old"` (oldest first) | `"random"` |
-| `showWidth` | Photo download width in pixels | `1080` |
-| `showHeight` | Photo download height in pixels | `1920` |
-| `timeFormat` | Timestamp format (moment.js) or `"relative"` | `"YYYY/MM/DD HH:mm"` |
-| `autoInfoPosition` | Auto-rotate info position every 15 min (prevents burn-in) | `false` |
-| `debug` | Enable verbose logging | `false` |
+| `showWidth` | Photo width in pixels (used for display size and download quality) | `1080` |
+| `showHeight` | Photo height in pixels (used for display size and download quality) | `1920` |
+| `timeFormat` | Photo timestamp format ([moment.js](https://momentjs.com/docs/#/displaying/format/)) or `"relative"` | `"YYYY/MM/DD HH:mm"` |
+| `autoInfoPosition` | Rotate info overlay position every 15 minutes (prevents screen burn-in) | `false` |
+| `debug` | Enable verbose logging in the console | `false` |
 
-> **Note:** The `albums` option from the old Library API is no longer used. With the Picker API, you select photos interactively via the Google-hosted picker.
+### Fullscreen example
 
-## File Structure
+To use the module as a fullscreen photo frame:
 
-After setup, your module directory should contain:
-
-```
-MMM-GooglePhotos/
-├── MMM-GooglePhotos.js       # Frontend module
-├── MMM-GooglePhotos.css       # Styles
-├── node_helper.js             # Backend (Picker API orchestration)
-├── GPhotosPicker.js           # Picker API client
-├── credentials.json           # OAuth client credentials (you provide)
-├── token.json                 # OAuth token (generated by generate_token_v2.js)
-├── picker_session.json        # Saved picker session (auto-created at runtime)
-├── google_auth.json           # Auth config (scope, paths)
-├── generate_token_v2.js       # Token generation script
-├── package.json
-├── node_modules/
-└── README.md
-```
-
-## Tips
-
-- **Hide photo info:** Add to `css/custom.css`:
-```css
-#GPHOTO_INFO {
-  display: none;
+```javascript
+{
+  module: "MMM-GooglePhotos",
+  position: "fullscreen_above",
+  config: {
+    driveFolder: "MagicMirror Photos",
+    updateInterval: 30000,
+    sort: "random",
+    showWidth: 1920,
+    showHeight: 1080,
+    autoInfoPosition: true
+  }
 }
 ```
 
-- **Move photo info (e.g. top-left):** Add to `css/custom.css`:
+---
+
+## How it works
+
+### Picker mode
+
+1. The module creates a Picker session and shows a link on the mirror display
+2. You open the link on any device and select photos from your Google Photos library
+3. The module downloads and displays your selection as a slideshow
+4. The session is saved to `picker_session.json` — on restart, it resumes without re-picking
+5. Photo URLs are automatically refreshed every 50 minutes (they expire after 60)
+6. When the session expires (~7 days), a new link appears on screen
+
+### Drive mode
+
+1. The module connects to Google Drive and finds the configured folder
+2. It lists all images in the folder and displays them as a slideshow
+3. The photo list is refreshed every 50 minutes to pick up new additions
+4. No user interaction needed after initial setup
+
+---
+
+## CSS Customization
+
+Add any of these to your `css/custom.css` to customize the appearance:
+
+**Hide the photo info overlay:**
 ```css
-#GPHOTO_INFO {
-  top: 10px;
-  left: 10px;
-  bottom: inherit;
-  right: inherit;
-}
+#GPHOTO_INFO { display: none; }
 ```
 
-- **Hide blurred background:**
+**Hide the blurred background:**
 ```css
-#GPHOTO_BACK {
-  display: none;
-}
+#GPHOTO_BACK { display: none; }
 ```
 
-- **Cover whole region:**
+**Fill the entire region (crop to fit):**
 ```css
-#GPHOTO_CURRENT {
-  background-size: cover;
-}
+#GPHOTO_CURRENT { background-size: cover; }
 ```
 
-- **Contain (shrink to fit):**
+**Add opacity to photos (useful with other modules on screen):**
 ```css
-#GPHOTO_CURRENT {
-  background-size: contain;
-}
+#GPHOTO_CURRENT { opacity: 0.5; }
 ```
 
-- **Display clock clearly over fullscreen photos:**
+**Display clock clearly over fullscreen photos:**
 ```css
 .clock {
   padding: 10px;
@@ -200,43 +271,96 @@ MMM-GooglePhotos/
 }
 ```
 
-- **Add opacity to photos:**
-```css
-@keyframes trans {
-  from { opacity: 0 }
-  to { opacity: 0.5 }
-}
-#GPHOTO_CURRENT {
-  background-size: cover;
-  opacity: 0.5;
-}
-```
+---
 
-## Resetting the Photo Selection
+## Managing photos
 
-To choose a new set of photos, delete the saved session file and restart MagicMirror:
+### Picker mode: select different photos
+
+Delete the saved session and restart MagicMirror:
 
 ```bash
-cd ~/MagicMirror/modules/MMM-GooglePhotos
-rm picker_session.json
+rm ~/MagicMirror/modules/MMM-GooglePhotos/picker_session.json
+pm2 restart MagicMirror
 ```
 
-Then restart MagicMirror. A new picker session will be created and a fresh link will appear on screen for you to select photos.
+A new picker link will appear on screen.
+
+### Drive mode: add or remove photos
+
+Simply add or remove photos from your Google Drive folder. The module picks up changes automatically within 50 minutes, or restart MagicMirror for immediate effect.
+
+---
+
+## Remote setup (headless Raspberry Pi)
+
+If your MagicMirror runs on a headless Raspberry Pi, generate the token on a computer with a browser first:
+
+1. On your **computer**: clone the repo, run `npm install`, place `credentials.json`, and run `node generate_token_v2.js`
+2. Copy `credentials.json` and `token.json` to the Pi:
+
+```bash
+scp credentials.json token.json pi@<pi-ip>:~/MagicMirror/modules/MMM-GooglePhotos/
+```
+
+3. Restart MagicMirror on the Pi
+
+---
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| "insufficient authentication scopes" | Delete `token.json`, re-run `node generate_token_v2.js`. Ensure **Google Photos Picker API** is enabled in GCP. |
-| "No OAuth token found" | Run `node generate_token_v2.js` to generate `token.json`. |
-| "Missing credentials.json" | Download OAuth credentials from GCP Console (see Step 4 above). |
-| Picker link not working | Ensure you enabled the **Google Photos Picker API** (not "Google Picker API") in GCP. |
-| Photos stop loading after ~1 hour | Base URLs expired. The module auto-refreshes every 50 min. If it fails, restart MagicMirror. |
-| punycode deprecation warning | Already fixed via npm overrides. Run `npm install` to apply. |
-| Want to select different photos | Delete `picker_session.json` and restart MagicMirror (see above). |
+| "insufficient authentication scopes" | Delete `token.json`, check the scope in `google_auth.json`, and re-run `node generate_token_v2.js` |
+| "No OAuth token found" | Run `node generate_token_v2.js` to generate `token.json` |
+| "Missing credentials.json" | Download OAuth credentials from the Google Cloud Console |
+| Picker link not working | Make sure you enabled **Google Photos Picker API** (not "Google Picker API") |
+| Photos are very small | Increase `showWidth` and `showHeight` in your config to match your screen resolution |
+| Photos stop loading | URLs expire after 60 min — the module auto-refreshes every 50 min. If issues persist, restart MagicMirror |
+| Drive folder not found | Verify the folder name is exact (case-sensitive) or use the folder ID from the URL |
+| Token expires every week | Publish your app on the OAuth consent screen (see [Step 3](#step-3-configure-the-oauth-consent-screen)) |
+| Want to switch modes | Update the scope in `google_auth.json`, delete `token.json`, re-run `node generate_token_v2.js` |
 
-## Notice
+---
 
-- On first launch, the module will display a picker link. Open it to select photos.
-- Sessions are saved and restored on restart. You only need to re-pick when the session expires.
-- The Picker API has usage quotas. For normal slideshow use, you should not hit them.
+## File structure
+
+```
+MMM-GooglePhotos/
+├── MMM-GooglePhotos.js       # Frontend module
+├── MMM-GooglePhotos.css      # Styles
+├── node_helper.js            # Backend (mode orchestration)
+├── GPhotosPicker.js          # Google Photos Picker API client
+├── GDrive.js                 # Google Drive API client
+├── generate_token_v2.js      # OAuth token generator
+├── google_auth.json          # Auth config (scope + file paths)
+├── credentials.json          # Your OAuth credentials (not in git)
+├── token.json                # Generated OAuth token (not in git)
+├── picker_session.json       # Saved picker session (auto-created)
+└── package.json              # Dependencies
+```
+
+> `credentials.json` and `token.json` are excluded from git via `.gitignore`. Never share these files publicly.
+
+---
+
+## Updating
+
+```bash
+cd ~/MagicMirror/modules/MMM-GooglePhotos
+git pull
+npm run install-prod
+```
+
+Then restart MagicMirror.
+
+---
+
+## License
+
+MIT
+
+## Credits
+
+Originally created by [eouia](https://github.com/eouia), maintained by [hermanho](https://github.com/hermanho).
+Drive mode and Picker API migration by contributors.
