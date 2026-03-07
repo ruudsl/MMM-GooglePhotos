@@ -44,8 +44,32 @@ module.exports = NodeHelper.create({
       case "NEED_MORE_PICS":
         if (this.mode === "drive" && this.mediaItems.length > 0) {
           this.sendPhotos();
+        } else if (this.mode === "drive" && this.mediaItems.length === 0) {
+          // Drive mode but no photos — try re-fetching from Drive
+          this.log("No photos in cache, re-fetching from Drive...");
+          this.fetchDrivePhotos().catch((err) => {
+            this.logError("Re-fetch Drive photos failed:", err.toString());
+          });
         } else if (this.sessionReady && this.mediaItems.length > 0) {
           this.sendPhotos();
+        } else if (this.sessionReady && this.mediaItems.length === 0) {
+          // Picker mode, session ready but no photos — try re-fetching
+          this.log("No photos in cache, re-fetching from Picker session...");
+          this.fetchAndSendPhotos().catch((err) => {
+            this.logError("Re-fetch Picker photos failed:", err.toString());
+          });
+        } else {
+          // Session not ready — notify frontend there are no photos yet
+          this.log(
+            "NEED_MORE_PICS received but session not ready (mode:",
+            this.mode,
+            ", sessionReady:",
+            this.sessionReady,
+            ", mediaItems:",
+            this.mediaItems.length,
+            ")",
+          );
+          this.sendSocketNotification("MORE_PICS", []);
         }
         break;
       case "IMAGE_LOADED":

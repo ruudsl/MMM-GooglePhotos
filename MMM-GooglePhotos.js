@@ -135,6 +135,16 @@ Module.register("MMM-GooglePhotos", {
 
     if (this.scanned.length === 0) {
       this.sendSocketNotification("NEED_MORE_PICS", []);
+      // Retry after 30 seconds if still no photos
+      if (!this._emptyRetryTimer) {
+        this._emptyRetryTimer = setTimeout(() => {
+          this._emptyRetryTimer = null;
+          if (this.scanned.length === 0) {
+            Log.warn("Still no photos available, retrying...");
+            this.sendSocketNotification("NEED_MORE_PICS", []);
+          }
+        }, 30000);
+      }
       return;
     }
     if (this.suspended) {
@@ -162,6 +172,26 @@ Module.register("MMM-GooglePhotos", {
       setTimeout(() => {
         this.sendSocketNotification("NEED_MORE_PICS", []);
       }, 2000);
+    }
+  },
+
+  _scheduleRetryNext: function () {
+    // Skip to the next photo after a short delay when current one fails to load
+    this._consecutiveFailures = (this._consecutiveFailures || 0) + 1;
+    if (this._consecutiveFailures >= 5) {
+      // Too many failures in a row — URLs likely expired, request fresh photos
+      Log.warn("Multiple consecutive image load failures, requesting fresh photos...");
+      this._consecutiveFailures = 0;
+      this.needMorePicsFlag = true;
+      this.sendSocketNotification("NEED_MORE_PICS", []);
+      return;
+    }
+    // Try the next photo after 3 seconds
+    if (!this._retryNextTimer) {
+      this._retryNextTimer = setTimeout(() => {
+        this._retryNextTimer = null;
+        this.updatePhotos();
+      }, 3000);
     }
   },
 
@@ -227,6 +257,8 @@ Module.register("MMM-GooglePhotos", {
         .catch((err) => {
           Log.error("Image fetch error:", err);
           _this.sendSocketNotification("IMAGE_LOAD_FAIL", { url });
+          // Skip to next photo instead of staying on broken image
+          _this._scheduleRetryNext();
         });
     } else {
       // Fallback: direct load (Library API style)
@@ -234,6 +266,8 @@ Module.register("MMM-GooglePhotos", {
       const _this = this;
       hidden.onerror = () => {
         _this.sendSocketNotification("IMAGE_LOAD_FAIL", { url });
+        // Skip to next photo instead of staying on broken image
+        _this._scheduleRetryNext();
       };
       hidden.onload = () => {
         _this.render(url, target);
@@ -243,6 +277,7 @@ Module.register("MMM-GooglePhotos", {
   },
 
   render: function (url, target) {
+    this._consecutiveFailures = 0; // Reset on successful load
     let back = document.getElementById("GPHOTO_BACK");
     let current = document.getElementById("GPHOTO_CURRENT");
     if (!current || !back) return;
