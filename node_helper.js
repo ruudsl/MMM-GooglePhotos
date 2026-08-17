@@ -39,11 +39,15 @@ module.exports = NodeHelper.create({
           this.mediaItems = [];
           this.mode = null;
           this.initialize();
+        } else {
+          // Same config — frontend likely restarted; resend current state
+          this.log("Frontend reconnected with same config, resending state...");
+          this.resendCurrentState();
         }
         break;
       case "NEED_MORE_PICS":
         if (this.mode === "drive" && this.mediaItems.length > 0) {
-          this.sendPhotos();
+          this.refreshTokenAndSendPhotos();
         } else if (this.mode === "drive" && this.mediaItems.length === 0) {
           // Drive mode but no photos — try re-fetching from Drive
           this.log("No photos in cache, re-fetching from Drive...");
@@ -51,7 +55,7 @@ module.exports = NodeHelper.create({
             this.logError("Re-fetch Drive photos failed:", err.toString());
           });
         } else if (this.sessionReady && this.mediaItems.length > 0) {
-          this.sendPhotos();
+          this.refreshPickerTokenAndSendPhotos();
         } else if (this.sessionReady && this.mediaItems.length === 0) {
           // Picker mode, session ready but no photos — try re-fetching
           this.log("No photos in cache, re-fetching from Picker session...");
@@ -315,6 +319,61 @@ module.exports = NodeHelper.create({
   },
 
   // ─── Shared ──────────────────────────────────────────────────────────────
+
+  resendCurrentState: async function () {
+    if (this.mode === "drive" && this.mediaItems.length > 0) {
+      this.sendSocketNotification("INITIALIZED", []);
+      await this.refreshTokenAndSendPhotos();
+    } else if (
+      this.mode === "picker" &&
+      this.sessionReady &&
+      this.mediaItems.length > 0
+    ) {
+      this.sendSocketNotification("INITIALIZED", []);
+      await this.refreshPickerTokenAndSendPhotos();
+    } else if (
+      this.mode === "picker" &&
+      !this.sessionReady &&
+      this.sessionId
+    ) {
+      // Picker session still pending — resend picker URI
+      const saved = this.picker && this.picker.loadSavedSession();
+      if (saved && saved.pickerUri) {
+        this.sendSocketNotification("PICKER_SESSION", {
+          pickerUri: saved.pickerUri,
+          sessionId: this.sessionId,
+        });
+      }
+    } else {
+      this.log(
+        "No state to resend — initialization may still be in progress.",
+      );
+    }
+  },
+
+  refreshTokenAndSendPhotos: async function () {
+    try {
+      this.accessToken = await this.drive.getAccessToken();
+    } catch (err) {
+      this.logError(
+        "Drive token refresh failed, using existing:",
+        err.toString(),
+      );
+    }
+    this.sendPhotos();
+  },
+
+  refreshPickerTokenAndSendPhotos: async function () {
+    try {
+      this.accessToken = await this.picker.getAccessToken();
+    } catch (err) {
+      this.logError(
+        "Picker token refresh failed, using existing:",
+        err.toString(),
+      );
+    }
+    this.sendPhotos();
+  },
 
   sendPhotos: function () {
     if (this.mediaItems.length === 0) return;
