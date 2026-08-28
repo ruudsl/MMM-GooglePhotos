@@ -70,12 +70,7 @@ Module.register("MMM-GooglePhotos", {
     }
     if (notification === "INITIALIZED") {
       this.albums = payload;
-      if (!this.updateTimer || this.updateTimer === null) {
-        Log.info("Start timer for updating photos.");
-        this.updateTimer = setInterval(() => {
-          this.updatePhotos();
-        }, this.config.updateInterval);
-      }
+      this._ensureTimerRunning();
     }
     if (notification === "UPDATE_ALBUMS") {
       this.albums = payload;
@@ -86,6 +81,10 @@ Module.register("MMM-GooglePhotos", {
       this.index = 0;
       if (this.firstScan) {
         this.updatePhotos();
+      }
+      // Safety: ensure the timer is running whenever we receive photos
+      if (payload && payload.length > 0) {
+        this._ensureTimerRunning();
       }
     }
     if (notification === "ERROR") {
@@ -175,6 +174,15 @@ Module.register("MMM-GooglePhotos", {
     }
   },
 
+  _ensureTimerRunning: function () {
+    if (!this.updateTimer) {
+      Log.info("[MMM-GooglePhotos] Starting photo update timer.");
+      this.updateTimer = setInterval(() => {
+        this.updatePhotos();
+      }, this.config.updateInterval);
+    }
+  },
+
   _scheduleRetryNext: function () {
     // Skip to the next photo after a short delay when current one fails to load
     this._consecutiveFailures = (this._consecutiveFailures || 0) + 1;
@@ -247,6 +255,9 @@ Module.register("MMM-GooglePhotos", {
         headers: { Authorization: "Bearer " + target._accessToken },
       })
         .then((res) => {
+          if (res.status === 401 || res.status === 403) {
+            throw new Error("AUTH_EXPIRED");
+          }
           if (!res.ok) throw new Error("HTTP " + res.status);
           return res.blob();
         })
@@ -257,8 +268,16 @@ Module.register("MMM-GooglePhotos", {
         .catch((err) => {
           Log.error("Image fetch error:", err);
           _this.sendSocketNotification("IMAGE_LOAD_FAIL", { url });
-          // Skip to next photo instead of staying on broken image
-          _this._scheduleRetryNext();
+          if (err.message === "AUTH_EXPIRED") {
+            // Token expired — request fresh photos with new token immediately
+            Log.warn("[MMM-GooglePhotos] Auth token expired, requesting fresh photos...");
+            _this._consecutiveFailures = 0;
+            _this.needMorePicsFlag = true;
+            _this.sendSocketNotification("NEED_MORE_PICS", []);
+          } else {
+            // Skip to next photo instead of staying on broken image
+            _this._scheduleRetryNext();
+          }
         });
     } else {
       // Fallback: direct load (Library API style)

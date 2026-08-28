@@ -88,8 +88,16 @@ class Auth extends EventEmitter {
         }
       } catch (error) {
         console.error("[GDRIVE:AUTH]", error);
-      } finally {
-        if (tokensCred !== undefined) saveTokens();
+        this.emit("error", error);
+        return;
+      }
+      if (tokensCred !== undefined) {
+        saveTokens().catch((err) => {
+          console.error("[GDRIVE:AUTH] Token refresh failed:", err.message || err);
+          this.emit("error", err);
+        });
+      } else {
+        this.emit("error", new Error("No valid token data found in " + tokenFile));
       }
     });
   }
@@ -140,8 +148,17 @@ class GDrive {
       throw e;
     }
     const client = await new Promise((resolve, reject) => {
-      auth.on("ready", (c) => resolve(c));
-      auth.on("error", (error) => reject(error));
+      const timeout = setTimeout(() => {
+        reject(new Error("Auth timed out after 30 seconds"));
+      }, 30000);
+      auth.on("ready", (c) => {
+        clearTimeout(timeout);
+        resolve(c);
+      });
+      auth.on("error", (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
     });
     this._cachedClient = client;
     this._clientExpiry =
