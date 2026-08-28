@@ -156,13 +156,36 @@ module.exports = NodeHelper.create({
 
   startDriveRefresh: function () {
     if (this.baseUrlRefreshTimer) clearInterval(this.baseUrlRefreshTimer);
+    this._driveRefreshFailures = 0;
     // Refresh every 50 minutes (tokens expire after 60)
     this.baseUrlRefreshTimer = setInterval(async () => {
       this.log("Refreshing Drive photos and access token...");
       try {
         await this.fetchDrivePhotos();
+        this._driveRefreshFailures = 0;
       } catch (err) {
-        this.logError("Drive refresh error:", err.toString());
+        this._driveRefreshFailures++;
+        this.logError(
+          "Drive refresh error (attempt",
+          this._driveRefreshFailures + "):",
+          err.toString(),
+        );
+        if (this._driveRefreshFailures >= 3) {
+          this.log(
+            "Multiple refresh failures, forcing full re-initialization...",
+          );
+          this._driveRefreshFailures = 0;
+          this.drive._cachedClient = null;
+          this.drive._clientExpiry = 0;
+          try {
+            await this.fetchDrivePhotos();
+          } catch (retryErr) {
+            this.logError(
+              "Re-initialization also failed:",
+              retryErr.toString(),
+            );
+          }
+        }
       }
     }, 50 * 60 * 1000);
   },
@@ -353,7 +376,16 @@ module.exports = NodeHelper.create({
 
   refreshTokenAndSendPhotos: async function () {
     try {
-      this.accessToken = await this.drive.getAccessToken();
+      // Race token refresh against a 15-second timeout
+      this.accessToken = await Promise.race([
+        this.drive.getAccessToken(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Token refresh timed out")),
+            15000,
+          ),
+        ),
+      ]);
     } catch (err) {
       this.logError(
         "Drive token refresh failed, using existing:",
@@ -365,7 +397,15 @@ module.exports = NodeHelper.create({
 
   refreshPickerTokenAndSendPhotos: async function () {
     try {
-      this.accessToken = await this.picker.getAccessToken();
+      this.accessToken = await Promise.race([
+        this.picker.getAccessToken(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Picker token refresh timed out")),
+            15000,
+          ),
+        ),
+      ]);
     } catch (err) {
       this.logError(
         "Picker token refresh failed, using existing:",
