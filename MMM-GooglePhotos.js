@@ -297,6 +297,15 @@ Module.register("MMM-GooglePhotos", {
 
   render: function (url, target) {
     this._consecutiveFailures = 0; // Reset on successful load
+
+    // Revoke previous blob URL to prevent memory leak —
+    // without this, each photo stays in RAM forever and the Pi
+    // runs out of memory after ~24 hours of slideshowing.
+    if (this._currentBlobUrl) {
+      URL.revokeObjectURL(this._currentBlobUrl);
+    }
+    this._currentBlobUrl = url.startsWith("blob:") ? url : null;
+
     let back = document.getElementById("GPHOTO_BACK");
     let current = document.getElementById("GPHOTO_CURRENT");
     if (!current || !back) return;
