@@ -113,25 +113,18 @@ To enable: Go to **APIs & Services** > **Library**, search for the API name, and
 mv ~/Downloads/client_secret_*.json ~/MagicMirror/modules/MMM-GooglePhotos/credentials.json
 ```
 
-### Step 5: Set the correct API scope
+### Step 5: API scopes
 
-Edit `google_auth.json` in the module directory to match your chosen mode:
+`google_auth.json` requests both the Drive and the Picker scope by default, so one token works for both modes. No editing is needed:
 
-**For Picker mode** (default):
 ```json
 {
   "keyFilePath": "./credentials.json",
   "savedTokensPath": "./token.json",
-  "scope": "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-}
-```
-
-**For Drive mode:**
-```json
-{
-  "keyFilePath": "./credentials.json",
-  "savedTokensPath": "./token.json",
-  "scope": "https://www.googleapis.com/auth/drive.readonly"
+  "scope": [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+  ]
 }
 ```
 
@@ -142,7 +135,7 @@ cd ~/MagicMirror/modules/MMM-GooglePhotos
 node generate_token_v2.js
 ```
 
-> **Switching modes?** If you switch between Picker and Drive mode, update the scope in `google_auth.json`, delete the old `token.json`, and re-run `node generate_token_v2.js`.
+> **Got a 403 error?** Your `token.json` was generated with only one scope. Delete it and re-run `node generate_token_v2.js`.
 
 ---
 
@@ -319,7 +312,7 @@ scp credentials.json token.json pi@<pi-ip>:~/MagicMirror/modules/MMM-GooglePhoto
 | Photos stop loading | URLs expire after 60 min — the module auto-refreshes every 50 min. If issues persist, restart MagicMirror |
 | Drive folder not found | Verify the folder name is exact (case-sensitive) or use the folder ID from the URL |
 | Token expires every week | Publish your app on the OAuth consent screen (see [Step 3](#step-3-configure-the-oauth-consent-screen)) |
-| Want to switch modes | Update the scope in `google_auth.json`, delete `token.json`, re-run `node generate_token_v2.js` |
+| Google Drive error 403 | Token lacks the Drive scope. Delete `token.json`, re-run `node generate_token_v2.js`, and check that the Google Drive API is enabled in your Cloud project |
 
 ---
 

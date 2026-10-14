@@ -123,9 +123,9 @@ module.exports = NodeHelper.create({
         "ERROR",
         "Google Drive error: " +
           err.toString() +
-          "\n\nMake sure google_auth.json has scope: " +
-          "https://www.googleapis.com/auth/drive.readonly " +
-          "and run: node generate_token_v2.js",
+          "\n\nDelete token.json and run: node generate_token_v2.js " +
+          "(google_auth.json must include the drive.readonly scope, " +
+          "and the Google Drive API must be enabled)",
       );
       // Retry after 5 minutes
       setTimeout(() => {
